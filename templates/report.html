@@ -315,6 +315,50 @@
             color: #888;
             flex-wrap: wrap;
         }
+        .match-reason {
+            background: rgba(102, 126, 234, 0.1);
+            border-left: 3px solid #667eea;
+            padding: 8px 12px;
+            margin-top: 8px;
+            font-size: 0.85em;
+            color: #a0a0ff;
+            border-radius: 0 5px 5px 0;
+        }
+        .severity-group {
+            margin-bottom: 30px;
+        }
+        .severity-group-header {
+            padding: 15px 20px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .severity-group-header:hover {
+            filter: brightness(1.1);
+        }
+        .severity-group-header h3 {
+            margin: 0;
+            font-size: 1.2em;
+        }
+        .severity-group-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.5s ease;
+        }
+        .severity-group.active .severity-group-content {
+            max-height: 10000px;
+        }
+        .severity-toggle {
+            font-size: 1.5em;
+            transition: transform 0.3s ease;
+        }
+        .severity-group.active .severity-toggle {
+            transform: rotate(180deg);
+        }
         .no-vulns {
             text-align: center;
             padding: 40px;
@@ -354,6 +398,11 @@
                 <div class="sub">发现的服务总数</div>
             </div>
             <div class="info-card">
+                <h3>关联 CVE</h3>
+                <div class="value">{{ total_cves }}</div>
+                <div class="sub">漏洞总数</div>
+            </div>
+            <div class="info-card">
                 <h3>严重漏洞</h3>
                 <div class="value label-CRITICAL">{{ risk_summary.get('CRITICAL', 0) }}</div>
                 <div class="sub">CRITICAL 级别</div>
@@ -362,6 +411,11 @@
                 <h3>高危漏洞</h3>
                 <div class="value label-HIGH">{{ risk_summary.get('HIGH', 0) }}</div>
                 <div class="sub">HIGH 级别</div>
+            </div>
+            <div class="info-card">
+                <h3>中危漏洞</h3>
+                <div class="value label-MEDIUM">{{ risk_summary.get('MEDIUM', 0) }}</div>
+                <div class="sub">MEDIUM 级别</div>
             </div>
         </div>
 
@@ -392,49 +446,75 @@
         </div>
 
         <div class="vulnerabilities-section">
-            <h2>⚠️ 漏洞详情</h2>
-            {% if services %}
-                {% for svc in services %}
-                    <div class="vuln-item" onclick="toggleVuln(this)">
-                        <div class="vuln-header">
-                            <div class="vuln-header-left">
-                                <span class="severity-badge badge-{{ svc.severity }}">{{ svc.severity }}</span>
-                                <span class="ip-port">{{ svc.ip }}:{{ svc.port }}</span>
-                                <span class="service-name">{{ svc.service }}</span>
-                                {% if svc.version %}
-                                    <span class="service-version">{{ svc.version }}</span>
-                                {% endif %}
+            <h2>⚠️ 漏洞详情（按严重等级分组）</h2>
+            {% if grouped_services %}
+                {% for severity in SEVERITY_ORDER %}
+                    {% if severity in grouped_services %}
+                        {% set svc_list = grouped_services[severity] %}
+                        <div class="severity-group active">
+                            <div class="severity-group-header {{ severity }}" onclick="toggleSeverityGroup(this)">
+                                <h3 class="label-{{ severity }}">
+                                    {{ severity }} - {{ svc_list|length }} 个服务
+                                    ({{ svc_list|sum(attribute='cve_count') }} 个 CVE)
+                                </h3>
+                                <span class="severity-toggle label-{{ severity }}">▼</span>
                             </div>
-                            <div class="vuln-header-right">
-                                <span class="cve-count">{{ svc.cve_count }} CVE{% if svc.cve_count != 1 %}s{% endif %}</span>
-                                <span class="toggle-icon">▼</span>
+                            <div class="severity-group-content">
+                                {% for svc in svc_list %}
+                                    <div class="vuln-item" onclick="toggleVuln(this)">
+                                        <div class="vuln-header">
+                                            <div class="vuln-header-left">
+                                                <span class="severity-badge badge-{{ svc.severity }}">{{ svc.severity }}</span>
+                                                <span class="ip-port">{{ svc.ip }}:{{ svc.port }}</span>
+                                                <span class="service-name">{{ svc.service }}</span>
+                                                {% if svc.version %}
+                                                    <span class="service-version">{{ svc.version }}</span>
+                                                {% endif %}
+                                            </div>
+                                            <div class="vuln-header-right">
+                                                <span class="cve-count">{{ svc.cve_count }} CVE{% if svc.cve_count != 1 %}s{% endif %}</span>
+                                                <span class="toggle-icon">▼</span>
+                                            </div>
+                                        </div>
+                                        <div class="vuln-content">
+                                            {% if svc.cves %}
+                                                <ul class="cve-list">
+                                                    {% for cve in svc.cves %}
+                                                        <li class="cve-item {{ cve.cvss_severity.lower() }}">
+                                                            <div class="cve-header">
+                                                                <span class="cve-id">{{ cve.cve_id }}</span>
+                                                                <div class="cve-score">
+                                                                    <span class="score-value label-{{ cve.cvss_severity }}">{{ cve.cvss_score }}</span>
+                                                                    <span class="severity-badge badge-{{ cve.cvss_severity }}" style="padding: 3px 10px; font-size: 0.75em;">{{ cve.cvss_severity }}</span>
+                                                                </div>
+                                                            </div>
+                                                            <p class="cve-description">{{ cve.description }}</p>
+                                                            {% if cve.match_reason %}
+                                                                <div class="match-reason">
+                                                                    🎯 命中依据: {{ cve.match_reason }}
+                                                                </div>
+                                                            {% endif %}
+                                                            {% if cve.matched_service and cve.matched_service != cve.service_name %}
+                                                                <div class="match-reason" style="border-left-color: #1dd1a1; background: rgba(29, 209, 161, 0.1); color: #55efc4;">
+                                                                    🔗 服务匹配: {{ cve.matched_service }} → {{ cve.service_name }}
+                                                                </div>
+                                                            {% endif %}
+                                                            <div class="cve-meta">
+                                                                <span>影响版本: {{ cve.version_start }} - {{ cve.version_end }}</span>
+                                                                <span>边界类型: {{ '包含' if cve.start_inclusive else '排除' }} → {{ '包含' if cve.end_inclusive else '排除' }}</span>
+                                                            </div>
+                                                        </li>
+                                                    {% endfor %}
+                                                </ul>
+                                            {% else %}
+                                                <div class="no-vulns">暂无已知 CVE 漏洞</div>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                {% endfor %}
                             </div>
                         </div>
-                        <div class="vuln-content">
-                            {% if svc.cves %}
-                                <ul class="cve-list">
-                                    {% for cve in svc.cves %}
-                                        <li class="cve-item {{ cve.cvss_severity.lower() }}">
-                                            <div class="cve-header">
-                                                <span class="cve-id">{{ cve.cve_id }}</span>
-                                                <div class="cve-score">
-                                                    <span class="score-value label-{{ cve.cvss_severity }}">{{ cve.cvss_score }}</span>
-                                                    <span class="severity-badge badge-{{ cve.cvss_severity }}" style="padding: 3px 10px; font-size: 0.75em;">{{ cve.cvss_severity }}</span>
-                                                </div>
-                                            </div>
-                                            <p class="cve-description">{{ cve.description }}</p>
-                                            <div class="cve-meta">
-                                                <span>影响版本: {{ cve.version_start }} - {{ cve.version_end }}</span>
-                                                <span>服务: {{ cve.service_name }}</span>
-                                            </div>
-                                        </li>
-                                    {% endfor %}
-                                </ul>
-                            {% else %}
-                                <div class="no-vulns">暂无已知 CVE 漏洞</div>
-                            {% endif %}
-                        </div>
-                    </div>
+                    {% endif %}
                 {% endfor %}
             {% else %}
                 <div class="no-vulns">未发现开放服务或漏洞</div>
@@ -452,9 +532,19 @@
             element.classList.toggle('active');
         }
 
+        function toggleSeverityGroup(element) {
+            const group = element.parentElement;
+            group.classList.toggle('active');
+        }
+
         document.addEventListener('DOMContentLoaded', function() {
             const criticalItems = document.querySelectorAll('.badge-CRITICAL');
             criticalItems.forEach(item => {
+                item.style.animation = 'pulse 2s infinite';
+            });
+            
+            const criticalBadges = document.querySelectorAll('.severity-group-header.CRITICAL');
+            criticalBadges.forEach(item => {
                 item.style.animation = 'pulse 2s infinite';
             });
         });

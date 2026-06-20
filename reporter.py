@@ -95,6 +95,13 @@ class Reporter:
                 summary[severity] = summary.get(severity, 0) + 1
         return summary
 
+    def _group_cves_by_severity(self, cves: List[CVE]) -> Dict[str, List[CVE]]:
+        grouped = {s: [] for s in SEVERITY_ORDER}
+        for cve in cves:
+            sev = cve.cvss_severity if cve.cvss_severity in SEVERITY_ORDER else "UNKNOWN"
+            grouped[sev].append(cve)
+        return {k: v for k, v in grouped.items() if v}
+
     def print_terminal_report(self, result: ScanResult) -> None:
         if not RICH_AVAILABLE:
             self._print_simple_report(result)
@@ -115,6 +122,12 @@ class Reporter:
         info_table.add_row("存活主机", str(len(result.alive_hosts)))
         total_services = sum(len(svcs) for svcs in result.vulnerabilities.values())
         info_table.add_row("开放服务", str(total_services))
+        total_cves = sum(
+            len(svc_data.get("cves", []))
+            for services in result.vulnerabilities.values()
+            for svc_data in services.values()
+        )
+        info_table.add_row("关联 CVE", str(total_cves))
         console.print(info_table)
 
         if result.alive_hosts:
@@ -131,7 +144,7 @@ class Reporter:
         risk_summary = self._get_risk_summary(result.vulnerabilities)
         risk_table = Table(title="风险统计", show_header=True, header_style="bold yellow")
         risk_table.add_column("风险等级", style="bold")
-        risk_table.add_column("数量", justify="right")
+        risk_table.add_column("服务数量", justify="right")
         for severity in SEVERITY_ORDER:
             count = risk_summary.get(severity, 0)
             if count > 0:
@@ -141,14 +154,6 @@ class Reporter:
                     Text(str(count), style=color)
                 )
         console.print(risk_table)
-
-        vuln_table = Table(title="漏洞详情", show_header=True, header_style="bold red")
-        vuln_table.add_column("IP", style="cyan")
-        vuln_table.add_column("端口", justify="right")
-        vuln_table.add_column("服务", style="green")
-        vuln_table.add_column("版本", style="yellow")
-        vuln_table.add_column("风险等级", style="bold")
-        vuln_table.add_column("CVE 数量", justify="right")
 
         all_services = []
         for ip, services in result.vulnerabilities.items():
@@ -160,43 +165,49 @@ class Reporter:
             key=lambda x: SEVERITY_ORDER.index(self._get_severity_for_service(x[2]))
         )
 
-        for ip, svc_key, svc_data in sorted_services:
-            severity = self._get_severity_for_service(svc_data)
-            color = SEVERITY_COLORS.get(severity, "white")
-            cve_count = len(svc_data.get("cves", []))
+        services_with_cves = [(ip, key, data) for ip, key, data in sorted_services if data.get("cves")]
 
-            severity_text = Text(severity, style=f"bold {color}")
-            if severity == "CRITICAL":
-                severity_text.stylize("blink")
+        if services_with_cves:
+            console.print(Panel.fit(
+                Text("漏洞详情（按严重等级分组）", style="bold red"),
+                border_style="red"
+            ))
 
-            vuln_table.add_row(
-                ip,
-                str(svc_data["port"]),
-                svc_data["service"],
-                svc_data["version"] or "未知",
-                severity_text,
-                str(cve_count)
-            )
-        console.print(vuln_table)
-
-        for ip, svc_key, svc_data in sorted_services:
-            cves = svc_data.get("cves", [])
-            if cves:
-                severity = self._get_severity_for_service(svc_data)
-                color = SEVERITY_COLORS.get(severity, "white")
-                console.print(Panel.fit(
-                    f"[bold {color}]{ip}:{svc_data['port']} - {svc_data['service']} {svc_data['version']}[/bold {color}]",
-                    border_style=color
-                ))
-                for cve in cves[:5]:
-                    cve_table = Table(show_header=False, border_style=color)
-                    cve_table.add_column(style="bold cyan", width=15)
-                    cve_table.add_column(style="white")
-                    cve_table.add_row("CVE ID", f"[bold]{cve.cve_id}[/bold]")
-                    cve_table.add_row("CVSS", f"[bold]{cve.cvss_score}[/bold] ({cve.cvss_severity})")
-                    cve_table.add_row("影响版本", f"{cve.version_start} - {cve.version_end}")
-                    cve_table.add_row("描述", cve.description)
-                    console.print(cve_table)
+            for severity in SEVERITY_ORDER:
+                severity_services = [
+                    (ip, key, data) for ip, key, data in services_with_cves
+                    if self._get_severity_for_service(data) == severity
+                ]
+                
+                if severity_services:
+                    color = SEVERITY_COLORS.get(severity, "white")
+                    console.print()
+                    console.print(Panel(
+                        Text(f"{severity} - {len(severity_services)} 个服务", 
+                             style=f"bold {color}" + (" blink" if severity == "CRITICAL" else "")),
+                        border_style=color,
+                        expand=True
+                    ))
+                    
+                    for ip, svc_key, svc_data in severity_services:
+                        cves = svc_data.get("cves", [])
+                        console.print()
+                        console.print(f"[bold cyan]{ip}:{svc_data['port']}[/bold cyan] "
+                                     f"[bold green]{svc_data['service']} {svc_data['version']}[/bold green] "
+                                     f"[yellow]({len(cves)} 个 CVE)[/yellow]")
+                        
+                        grouped_cves = self._group_cves_by_severity(cves)
+                        for cve_sev in SEVERITY_ORDER:
+                            if cve_sev in grouped_cves:
+                                cve_color = SEVERITY_COLORS.get(cve_sev, "white")
+                                for cve in grouped_cves[cve_sev]:
+                                    console.print(f"  [bold {cve_color}]{cve.cve_id}[/bold {cve_color}] "
+                                                 f"(CVSS: {cve.cvss_score} - {cve.cvss_severity})")
+                                    if hasattr(cve, 'match_reason') and cve.match_reason:
+                                        console.print(f"    [dim]命中依据: {cve.match_reason}[/dim]")
+                                    if hasattr(cve, 'matched_service') and cve.matched_service:
+                                        console.print(f"    [dim]服务匹配: {cve.matched_service} -> {cve.service_name}[/dim]")
+                                    console.print(f"    [dim]描述: {cve.description[:100]}...[/dim]")
 
     def _print_simple_report(self, result: ScanResult) -> None:
         print("=" * 60)
@@ -233,25 +244,39 @@ class Reporter:
             template = env.get_template("report.html")
 
             all_services = []
+            grouped_by_severity = {s: [] for s in SEVERITY_ORDER}
+            
             for ip, services in result.vulnerabilities.items():
                 for svc_key, svc_data in services.items():
                     severity = self._get_severity_for_service(svc_data)
-                    all_services.append({
+                    cves = svc_data.get("cves", [])
+                    service_data = {
                         "ip": ip,
                         "port": svc_data["port"],
                         "service": svc_data["service"],
                         "version": svc_data["version"],
                         "severity": severity,
                         "severity_lower": severity.lower(),
-                        "cves": svc_data.get("cves", []),
-                        "cve_count": len(svc_data.get("cves", []))
-                    })
+                        "cves": cves,
+                        "cve_count": len(cves)
+                    }
+                    all_services.append(service_data)
+                    if severity in grouped_by_severity:
+                        grouped_by_severity[severity].append(service_data)
 
             all_services.sort(
                 key=lambda x: SEVERITY_ORDER.index(x["severity"]) if x["severity"] in SEVERITY_ORDER else 999
             )
+            
+            grouped_by_severity = {k: v for k, v in grouped_by_severity.items() if v}
 
             risk_summary = self._get_risk_summary(result.vulnerabilities)
+            
+            total_cves = sum(
+                len(svc_data.get("cves", []))
+                for services in result.vulnerabilities.values()
+                for svc_data in services.values()
+            )
 
             html_content = template.render(
                 target=result.target,
@@ -260,7 +285,9 @@ class Reporter:
                 alive_count=len(result.alive_hosts),
                 open_ports=result.open_ports,
                 services=all_services,
+                grouped_services=grouped_by_severity,
                 risk_summary=risk_summary,
+                total_cves=total_cves,
                 SEVERITY_COLORS=SEVERITY_COLORS,
                 SEVERITY_ORDER=SEVERITY_ORDER
             )

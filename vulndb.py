@@ -15,6 +15,10 @@ class CVE:
     cvss_score: float
     cvss_severity: str
     description: str
+    start_inclusive: bool = True
+    end_inclusive: bool = True
+    matched_service: str = ""
+    match_reason: str = ""
 
 
 SERVICE_ALIASES = {
@@ -40,6 +44,19 @@ def normalize_service_name(service_name: str) -> str:
         if name == canonical or name in aliases:
             return canonical
     return name
+
+
+def get_cvss_severity(cvss_score: float) -> str:
+    if cvss_score >= 9.0:
+        return "CRITICAL"
+    elif cvss_score >= 7.0:
+        return "HIGH"
+    elif cvss_score >= 4.0:
+        return "MEDIUM"
+    elif cvss_score > 0:
+        return "LOW"
+    else:
+        return "INFO"
 
 
 SAMPLE_CVE_DATA = [
@@ -112,6 +129,8 @@ class VulnDB:
                 service_name TEXT NOT NULL,
                 version_start TEXT NOT NULL,
                 version_end TEXT NOT NULL,
+                start_inclusive INTEGER NOT NULL DEFAULT 1,
+                end_inclusive INTEGER NOT NULL DEFAULT 1,
                 cvss_score REAL NOT NULL,
                 cvss_severity TEXT NOT NULL,
                 description TEXT
@@ -132,8 +151,8 @@ class VulnDB:
             self._import_from_csv(cursor, csv_path)
         elif load_sample:
             cursor.executemany("""
-                INSERT INTO cves (cve_id, service_name, version_start, version_end, cvss_score, cvss_severity, description)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO cves (cve_id, service_name, version_start, version_end, start_inclusive, end_inclusive, cvss_score, cvss_severity, description)
+                VALUES (?, ?, ?, ?, 1, 1, ?, ?, ?)
             """, SAMPLE_CVE_DATA)
 
         self.conn.commit()
@@ -169,7 +188,7 @@ class VulnDB:
         
         return product, version, has_exact_version
 
-    def _parse_nvd_csv_row(self, row: Dict[str, str]) -> Optional[Tuple[str, str, str, str, float, str, str]]:
+    def _parse_nvd_csv_row(self, row: Dict[str, str]) -> Optional[Tuple[str, str, str, str, bool, bool, float, str, str]]:
         try:
             cve_id = (row.get("CVE ID") or row.get("CVE") or row.get("cve_id") or "").strip()
             description = (row.get("Description") or row.get("description") or row.get("summary") or "").strip()
@@ -203,11 +222,14 @@ class VulnDB:
             
             version_start = ""
             version_end = ""
+            start_inclusive = True
+            end_inclusive = True
             
             for key in ["versionStartIncluding", "Version Start Including", "version_start_including", "Version Start"]:
                 val = row.get(key)
                 if val and val.strip():
                     version_start = val.strip()
+                    start_inclusive = True
                     break
             
             if not version_start:
@@ -215,12 +237,14 @@ class VulnDB:
                     val = row.get(key)
                     if val and val.strip():
                         version_start = val.strip()
+                        start_inclusive = False
                         break
             
             for key in ["versionEndIncluding", "Version End Including", "version_end_including", "Version End"]:
                 val = row.get(key)
                 if val and val.strip():
                     version_end = val.strip()
+                    end_inclusive = True
                     break
             
             if not version_end:
@@ -228,6 +252,7 @@ class VulnDB:
                     val = row.get(key)
                     if val and val.strip():
                         version_end = val.strip()
+                        end_inclusive = False
                         break
             
             affected_version = (row.get("Affected Version") or row.get("affected_version") 
@@ -235,20 +260,26 @@ class VulnDB:
             if not version_start and not version_end and affected_version and affected_version not in ["*", "-", "n/a"]:
                 version_start = affected_version
                 version_end = affected_version
+                start_inclusive = True
+                end_inclusive = True
             
             if cpe_has_exact and not version_start and not version_end:
                 version_start = cpe_version
                 version_end = cpe_version
+                start_inclusive = True
+                end_inclusive = True
             
             if not version_start or version_start in ["*", "-", "n/a", ""]:
                 version_start = "0"
+                start_inclusive = True
             if not version_end or version_end in ["*", "-", "n/a", ""]:
                 version_end = "9999"
+                end_inclusive = True
             
             if version_start == version_end and version_start == "0":
                 return None
             
-            return (cve_id, product, version_start, version_end, cvss_score, cvss_severity, description)
+            return (cve_id, product, version_start, version_end, start_inclusive, end_inclusive, cvss_score, cvss_severity, description)
         except Exception as e:
             return None
 
@@ -272,8 +303,8 @@ class VulnDB:
                         
                         if len(batch_data) >= batch_size:
                             cursor.executemany("""
-                                INSERT INTO cves (cve_id, service_name, version_start, version_end, cvss_score, cvss_severity, description)
-                                VALUES (?, ?, ?, ?, ?, ?, ?)
+                                INSERT INTO cves (cve_id, service_name, version_start, version_end, start_inclusive, end_inclusive, cvss_score, cvss_severity, description)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                             """, batch_data)
                             batch_data = []
                     else:
@@ -281,8 +312,8 @@ class VulnDB:
 
                 if batch_data:
                     cursor.executemany("""
-                        INSERT INTO cves (cve_id, service_name, version_start, version_end, cvss_score, cvss_severity, description)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        INSERT INTO cves (cve_id, service_name, version_start, version_end, start_inclusive, end_inclusive, cvss_score, cvss_severity, description)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, batch_data)
 
         except Exception as e:
@@ -303,11 +334,21 @@ class VulnDB:
                 service_name TEXT NOT NULL,
                 version_start TEXT NOT NULL,
                 version_end TEXT NOT NULL,
+                start_inclusive INTEGER NOT NULL DEFAULT 1,
+                end_inclusive INTEGER NOT NULL DEFAULT 1,
                 cvss_score REAL NOT NULL,
                 cvss_severity TEXT NOT NULL,
                 description TEXT
             )
         """)
+        
+        cursor.execute("PRAGMA table_info(cves)")
+        columns = [col[1] for col in cursor.fetchall()]
+        if 'start_inclusive' not in columns:
+            cursor.execute("ALTER TABLE cves ADD COLUMN start_inclusive INTEGER NOT NULL DEFAULT 1")
+        if 'end_inclusive' not in columns:
+            cursor.execute("ALTER TABLE cves ADD COLUMN end_inclusive INTEGER NOT NULL DEFAULT 1")
+        
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_service ON cves(service_name, version_start)
         """)
@@ -347,12 +388,21 @@ class VulnDB:
                 return 1
         return 0
 
-    def _version_in_range(self, version: str, start: str, end: str) -> bool:
+    def _version_in_range(self, version: str, start: str, end: str, 
+                         start_inclusive: bool = True, end_inclusive: bool = True) -> bool:
         if not version:
             return False
-        return self._version_compare(version, start) >= 0 and self._version_compare(version, end) <= 0
+        
+        start_cmp = self._version_compare(version, start)
+        end_cmp = self._version_compare(version, end)
+        
+        start_ok = start_cmp > 0 or (start_inclusive and start_cmp == 0)
+        end_ok = end_cmp < 0 or (end_inclusive and end_cmp == 0)
+        
+        return start_ok and end_ok
 
-    def _version_matches(self, service_version: str, cve_version_start: str, cve_version_end: str) -> bool:
+    def _version_matches(self, service_version: str, cve_version_start: str, cve_version_end: str,
+                         start_inclusive: bool = True, end_inclusive: bool = True) -> bool:
         if not service_version:
             return False
         sv_parts = self._parse_version(service_version)
@@ -364,10 +414,38 @@ class VulnDB:
         start_prefix = start_parts[:prefix_len]
         end_prefix = end_parts[:prefix_len]
         
-        if sv_prefix >= start_prefix and sv_prefix <= end_prefix:
+        start_cmp = 0
+        for a, b in zip(sv_prefix, start_prefix):
+            if a < b:
+                start_cmp = -1
+                break
+            elif a > b:
+                start_cmp = 1
+                break
+        
+        end_cmp = 0
+        for a, b in zip(sv_prefix, end_prefix):
+            if a < b:
+                end_cmp = -1
+                break
+            elif a > b:
+                end_cmp = 1
+                break
+        
+        start_ok = start_cmp > 0 or (start_inclusive and start_cmp == 0)
+        end_ok = end_cmp < 0 or (end_inclusive and end_cmp == 0)
+        
+        if start_ok and end_ok:
             return True
         
-        return self._version_in_range(service_version, cve_version_start, cve_version_end)
+        return self._version_in_range(service_version, cve_version_start, cve_version_end, 
+                                      start_inclusive, end_inclusive)
+
+    def _get_match_reason(self, service_version: str, cve_version_start: str, cve_version_end: str,
+                          start_inclusive: bool, end_inclusive: bool) -> str:
+        start_op = ">=" if start_inclusive else ">"
+        end_op = "<=" if end_inclusive else "<"
+        return f"版本 {service_version} 满足 {start_op} {cve_version_start} 且 {end_op} {cve_version_end}"
 
     def _get_service_search_names(self, service_name: str) -> List[str]:
         normalized = normalize_service_name(service_name)
@@ -386,7 +464,7 @@ class VulnDB:
         
         return list(names)
 
-    def query(self, service_name: str, version: str, limit: int = 20) -> List[CVE]:
+    def query(self, service_name: str, version: str, limit: int = 20, min_severity: Optional[str] = None) -> List[CVE]:
         if not self.conn:
             self.conn = sqlite3.connect(self.db_path)
             self.conn.row_factory = sqlite3.Row
@@ -398,7 +476,8 @@ class VulnDB:
         all_rows = []
         for name in search_names:
             query = """
-                SELECT cve_id, service_name, version_start, version_end, cvss_score, cvss_severity, description
+                SELECT cve_id, service_name, version_start, version_end, start_inclusive, end_inclusive, 
+                       cvss_score, cvss_severity, description
                 FROM cves
                 WHERE service_name LIKE ?
             """
@@ -415,29 +494,108 @@ class VulnDB:
 
         matched = []
         for row in unique_rows:
-            if self._version_matches(version, row["version_start"], row["version_end"]):
-                matched.append(CVE(
+            start_inclusive = bool(row["start_inclusive"]) if "start_inclusive" in row.keys() else True
+            end_inclusive = bool(row["end_inclusive"]) if "end_inclusive" in row.keys() else True
+            
+            if self._version_matches(version, row["version_start"], row["version_end"],
+                                    start_inclusive, end_inclusive):
+                cve = CVE(
                     cve_id=row["cve_id"],
                     service_name=row["service_name"],
                     version_start=row["version_start"],
                     version_end=row["version_end"],
                     cvss_score=row["cvss_score"],
                     cvss_severity=row["cvss_severity"],
-                    description=row["description"]
-                ))
+                    description=row["description"],
+                    start_inclusive=start_inclusive,
+                    end_inclusive=end_inclusive,
+                    matched_service=service_name,
+                    match_reason=self._get_match_reason(version, row["version_start"], 
+                                                        row["version_end"], 
+                                                        start_inclusive, end_inclusive)
+                )
+                matched.append(cve)
+
+        if min_severity:
+            severity_order = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"]
+            min_idx = severity_order.index(min_severity.upper()) if min_severity.upper() in severity_order else 0
+            matched = [c for c in matched if severity_order.index(c.cvss_severity) <= min_idx]
 
         matched.sort(key=lambda x: x.cvss_score, reverse=True)
         
         return matched[:limit]
 
-    def query_all(self, fingerprint_results: Dict[str, List[Dict]]) -> Dict[str, Dict]:
+    def check_database(self) -> Dict:
+        if not self.conn:
+            self.conn = sqlite3.connect(self.db_path)
+            self.conn.row_factory = sqlite3.Row
+
+        cursor = self.conn.cursor()
+        
+        stats = {}
+        
+        cursor.execute("SELECT COUNT(*) as total FROM cves")
+        stats["total_cves"] = cursor.fetchone()["total"]
+        
+        cursor.execute("SELECT COUNT(DISTINCT service_name) as services FROM cves")
+        stats["unique_services"] = cursor.fetchone()["services"]
+        
+        cursor.execute("""
+            SELECT cvss_severity, COUNT(*) as count 
+            FROM cves 
+            GROUP BY cvss_severity 
+            ORDER BY COUNT(*) DESC
+        """)
+        severity_dist = {}
+        for row in cursor.fetchall():
+            severity_dist[row["cvss_severity"]] = row["count"]
+        stats["severity_distribution"] = severity_dist
+        
+        cursor.execute("SELECT COUNT(*) as count FROM cves WHERE version_start = '0' OR version_end = '9999'")
+        stats["missing_version_range"] = cursor.fetchone()["count"]
+        
+        cursor.execute("SELECT COUNT(*) as count FROM cves WHERE cvss_score = 0 OR cvss_severity IS NULL")
+        stats["missing_cvss"] = cursor.fetchone()["count"]
+        
+        cursor.execute("SELECT COUNT(*) as count FROM cves WHERE description IS NULL OR description = ''")
+        stats["missing_description"] = cursor.fetchone()["count"]
+        
+        cursor.execute("""
+            SELECT service_name, COUNT(*) as count, MAX(cvss_score) as max_score
+            FROM cves 
+            GROUP BY service_name 
+            ORDER BY count DESC, max_score DESC
+            LIMIT 10
+        """)
+        top_services = []
+        for row in cursor.fetchall():
+            max_cvss = row["max_score"]
+            top_services.append({
+                "service_name": row["service_name"],
+                "cve_count": row["count"],
+                "max_cvss": max_cvss,
+                "max_severity": get_cvss_severity(max_cvss)
+            })
+        stats["top_services"] = top_services
+        
+        cursor.execute("SELECT MAX(cvss_score) as max_score FROM cves")
+        stats["max_cvss_score"] = cursor.fetchone()["max_score"]
+        
+        return stats
+
+    def query_all(self, fingerprint_results: Dict[str, List[Dict]], 
+                  min_severity: Optional[str] = None, cve_only: bool = False) -> Dict[str, Dict]:
         all_results: Dict[str, Dict] = {}
         for ip, services in fingerprint_results.items():
             all_results[ip] = {}
             for svc in services:
                 service = svc["service"]
                 version = svc["version"]
-                cves = self.query(service, version)
+                cves = self.query(service, version, min_severity=min_severity)
+                
+                if cve_only and not cves:
+                    continue
+                    
                 all_results[ip][f"{service}:{svc['port']}"] = {
                     "port": svc["port"],
                     "service": service,
