@@ -17,6 +17,31 @@ class CVE:
     description: str
 
 
+SERVICE_ALIASES = {
+    "apache": ["http_server", "apache_http_server", "httpd", "apache2"],
+    "microsoft_iis": ["internet_information_services", "iis", "internet_information_server"],
+    "openssh": ["ssh", "open_ssh"],
+    "nginx": ["nginx_web_server", "engine_x"],
+    "mysql": ["mysql_server", "mysql_database"],
+    "postgresql": ["postgres", "postgresql_database"],
+    "redis": ["redis_server", "redis_cache"],
+    "apache_tomcat": ["tomcat", "tomcat_server"],
+    "mongodb": ["mongo", "mongodb_server"],
+    "nodejs": ["node.js", "node_js"],
+    "wordpress": ["wordpress_cms", "wp"],
+    "curl": ["libcurl", "curl_tool"],
+    "openssl": ["open_ssl", "ssl_library"],
+}
+
+
+def normalize_service_name(service_name: str) -> str:
+    name = service_name.lower().strip().replace("-", "_").replace(" ", "_")
+    for canonical, aliases in SERVICE_ALIASES.items():
+        if name == canonical or name in aliases:
+            return canonical
+    return name
+
+
 SAMPLE_CVE_DATA = [
     ("CVE-2023-28531", "openssh", "7.0", "8.0", 9.8, "CRITICAL", "OpenSSH through 8.0 allows remote attackers to execute arbitrary code."),
     ("CVE-2023-38408", "openssh", "8.0", "9.3", 9.8, "CRITICAL", "The PKCS#11 feature in ssh-agent in OpenSSH before 9.3p2 has an insufficiently trustworthy search path."),
@@ -63,19 +88,19 @@ SAMPLE_CVE_DATA = [
 
 
 class VulnDB:
-    def __init__(self, db_path: str = "cve.db", csv_path: Optional[str] = None):
+    def __init__(self, db_path: str = "cve.db", csv_path: Optional[str] = None, load_sample: bool = True):
         self.db_path = db_path
         self.conn = None
-        self._init_db(csv_path)
+        self._init_db(csv_path, load_sample)
 
-    def _init_db(self, csv_path: Optional[str] = None) -> None:
+    def _init_db(self, csv_path: Optional[str] = None, load_sample: bool = True) -> None:
         if not os.path.exists(self.db_path):
-            self._create_db(csv_path)
+            self._create_db(csv_path, load_sample)
         else:
             self.conn = sqlite3.connect(self.db_path)
             self.conn.row_factory = sqlite3.Row
 
-    def _create_db(self, csv_path: Optional[str] = None) -> None:
+    def _create_db(self, csv_path: Optional[str] = None, load_sample: bool = True) -> None:
         self.conn = sqlite3.connect(self.db_path)
         self.conn.row_factory = sqlite3.Row
         cursor = self.conn.cursor()
@@ -101,9 +126,11 @@ class VulnDB:
             CREATE INDEX IF NOT EXISTS idx_cvss ON cves(cvss_score)
         """)
 
-        if csv_path and os.path.exists(csv_path):
+        if csv_path:
+            if not os.path.exists(csv_path):
+                raise FileNotFoundError(f"CSV 文件不存在: {csv_path}")
             self._import_from_csv(cursor, csv_path)
-        else:
+        elif load_sample:
             cursor.executemany("""
                 INSERT INTO cves (cve_id, service_name, version_start, version_end, cvss_score, cvss_severity, description)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -122,51 +149,115 @@ class VulnDB:
             return "LOW"
         return "INFO"
 
+    def _parse_version_from_cpe(self, cpe: str) -> Tuple[str, str, bool]:
+        if not cpe:
+            return "", "", False
+        
+        cpe = cpe.strip()
+        parts = cpe.split(":")
+        
+        product = ""
+        version = ""
+        has_exact_version = False
+        
+        if len(parts) >= 5:
+            product = parts[4].lower()
+        
+        if len(parts) >= 6 and parts[5] and parts[5] not in ["*", "-", ""]:
+            version = parts[5]
+            has_exact_version = True
+        
+        return product, version, has_exact_version
+
     def _parse_nvd_csv_row(self, row: Dict[str, str]) -> Optional[Tuple[str, str, str, str, float, str, str]]:
         try:
-            cve_id = row.get("CVE ID", row.get("CVE", row.get("cve_id", ""))).strip()
-            description = row.get("Description", row.get("description", "")).strip()
+            cve_id = (row.get("CVE ID") or row.get("CVE") or row.get("cve_id") or "").strip()
+            description = (row.get("Description") or row.get("description") or row.get("summary") or "").strip()
             
-            cvss_str = row.get("CVSS Score", row.get("CVSS", row.get("cvss_score", "0")))
+            cvss_str = (row.get("CVSS Score") or row.get("CVSS") or row.get("cvss_score") 
+                       or row.get("baseScore") or row.get("Base Score") or "0")
             try:
                 cvss_score = float(cvss_str) if cvss_str else 0.0
             except (ValueError, TypeError):
                 cvss_score = 0.0
             
-            cvss_severity = row.get("CVSS Severity", row.get("Severity", row.get("cvss_severity", ""))).strip().upper()
+            cvss_severity = (row.get("CVSS Severity") or row.get("Severity") or row.get("cvss_severity")
+                            or row.get("baseSeverity") or row.get("Base Severity") or "").strip().upper()
             if not cvss_severity:
                 cvss_severity = self._get_severity_from_score(cvss_score)
             
-            product = row.get("Product", row.get("Software", row.get("service_name", ""))).strip().lower()
-            vendor = row.get("Vendor", row.get("vendor", "")).strip().lower()
+            product = (row.get("Product") or row.get("Software") or row.get("service_name") 
+                      or row.get("product") or "").strip().lower()
             
-            if not product:
-                cpe = row.get("CPE", row.get("cpe", ""))
-                if cpe:
-                    parts = cpe.split(":")
-                    if len(parts) >= 5:
-                        product = parts[4].lower()
+            cpe = (row.get("CPE") or row.get("cpe") or row.get("cpe23Uri") 
+                  or row.get("CPE String") or "")
+            cpe_product, cpe_version, cpe_has_exact = self._parse_version_from_cpe(cpe)
+            
+            if not product and cpe_product:
+                product = cpe_product
             
             if not product or not cve_id:
                 return None
             
-            version_start = row.get("Version Start", row.get("version_start", row.get("Affected Version", "0"))).strip()
-            version_end = row.get("Version End", row.get("version_end", row.get("Affected Version End", "9999"))).strip()
+            product = normalize_service_name(product)
             
-            if not version_start or version_start in ["*", "-", "n/a"]:
+            version_start = ""
+            version_end = ""
+            
+            for key in ["versionStartIncluding", "Version Start Including", "version_start_including", "Version Start"]:
+                val = row.get(key)
+                if val and val.strip():
+                    version_start = val.strip()
+                    break
+            
+            if not version_start:
+                for key in ["versionStartExcluding", "Version Start Excluding", "version_start_excluding"]:
+                    val = row.get(key)
+                    if val and val.strip():
+                        version_start = val.strip()
+                        break
+            
+            for key in ["versionEndIncluding", "Version End Including", "version_end_including", "Version End"]:
+                val = row.get(key)
+                if val and val.strip():
+                    version_end = val.strip()
+                    break
+            
+            if not version_end:
+                for key in ["versionEndExcluding", "Version End Excluding", "version_end_excluding"]:
+                    val = row.get(key)
+                    if val and val.strip():
+                        version_end = val.strip()
+                        break
+            
+            affected_version = (row.get("Affected Version") or row.get("affected_version") 
+                               or row.get("Version") or "").strip()
+            if not version_start and not version_end and affected_version and affected_version not in ["*", "-", "n/a"]:
+                version_start = affected_version
+                version_end = affected_version
+            
+            if cpe_has_exact and not version_start and not version_end:
+                version_start = cpe_version
+                version_end = cpe_version
+            
+            if not version_start or version_start in ["*", "-", "n/a", ""]:
                 version_start = "0"
-            if not version_end or version_end in ["*", "-", "n/a"]:
+            if not version_end or version_end in ["*", "-", "n/a", ""]:
                 version_end = "9999"
             
+            if version_start == version_end and version_start == "0":
+                return None
+            
             return (cve_id, product, version_start, version_end, cvss_score, cvss_severity, description)
-        except Exception:
+        except Exception as e:
             return None
 
-    def _import_from_csv(self, cursor: sqlite3.Cursor, csv_path: str) -> int:
+    def _import_from_csv(self, cursor: sqlite3.Cursor, csv_path: str) -> Tuple[int, int]:
         if not os.path.exists(csv_path):
             raise FileNotFoundError(f"CSV 文件不存在: {csv_path}")
 
-        count = 0
+        imported = 0
+        skipped = 0
         batch_size = 1000
         batch_data = []
 
@@ -177,7 +268,7 @@ class VulnDB:
                     parsed = self._parse_nvd_csv_row(row)
                     if parsed:
                         batch_data.append(parsed)
-                        count += 1
+                        imported += 1
                         
                         if len(batch_data) >= batch_size:
                             cursor.executemany("""
@@ -185,6 +276,8 @@ class VulnDB:
                                 VALUES (?, ?, ?, ?, ?, ?, ?)
                             """, batch_data)
                             batch_data = []
+                    else:
+                        skipped += 1
 
                 if batch_data:
                     cursor.executemany("""
@@ -195,17 +288,45 @@ class VulnDB:
         except Exception as e:
             raise RuntimeError(f"导入 CSV 失败: {e}")
 
-        return count
+        return imported, skipped
 
-    def import_csv(self, csv_path: str) -> int:
+    def _ensure_table_exists(self) -> None:
         if not self.conn:
             self.conn = sqlite3.connect(self.db_path)
             self.conn.row_factory = sqlite3.Row
         
         cursor = self.conn.cursor()
-        count = self._import_from_csv(cursor, csv_path)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS cves (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                cve_id TEXT NOT NULL,
+                service_name TEXT NOT NULL,
+                version_start TEXT NOT NULL,
+                version_end TEXT NOT NULL,
+                cvss_score REAL NOT NULL,
+                cvss_severity TEXT NOT NULL,
+                description TEXT
+            )
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_service ON cves(service_name, version_start)
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_cvss ON cves(cvss_score)
+        """)
         self.conn.commit()
-        return count
+
+    def import_csv(self, csv_path: str) -> Tuple[int, int]:
+        if not self.conn:
+            self.conn = sqlite3.connect(self.db_path)
+            self.conn.row_factory = sqlite3.Row
+        
+        self._ensure_table_exists()
+        
+        cursor = self.conn.cursor()
+        imported, skipped = self._import_from_csv(cursor, csv_path)
+        self.conn.commit()
+        return imported, skipped
 
     def _parse_version(self, version: str) -> List[int]:
         if not version:
@@ -248,27 +369,54 @@ class VulnDB:
         
         return self._version_in_range(service_version, cve_version_start, cve_version_end)
 
+    def _get_service_search_names(self, service_name: str) -> List[str]:
+        normalized = normalize_service_name(service_name)
+        names = {normalized}
+        names.add(service_name.lower())
+        
+        if normalized in SERVICE_ALIASES:
+            for alias in SERVICE_ALIASES[normalized]:
+                names.add(alias)
+        
+        for canonical, aliases in SERVICE_ALIASES.items():
+            if service_name.lower() in aliases:
+                names.add(canonical)
+                for a in aliases:
+                    names.add(a)
+        
+        return list(names)
+
     def query(self, service_name: str, version: str, limit: int = 20) -> List[CVE]:
         if not self.conn:
             self.conn = sqlite3.connect(self.db_path)
             self.conn.row_factory = sqlite3.Row
 
         cursor = self.conn.cursor()
-        query = """
-            SELECT cve_id, service_name, version_start, version_end, cvss_score, cvss_severity, description
-            FROM cves
-            WHERE service_name LIKE ?
-            ORDER BY cvss_score DESC
-            LIMIT ?
-        """
-        service_pattern = f"%{service_name.lower()}%"
-        cursor.execute(query, (service_pattern, limit))
-        rows = cursor.fetchall()
+        
+        search_names = self._get_service_search_names(service_name)
+        
+        all_rows = []
+        for name in search_names:
+            query = """
+                SELECT cve_id, service_name, version_start, version_end, cvss_score, cvss_severity, description
+                FROM cves
+                WHERE service_name LIKE ?
+            """
+            cursor.execute(query, (f"%{name}%",))
+            all_rows.extend(cursor.fetchall())
+        
+        seen = set()
+        unique_rows = []
+        for row in all_rows:
+            key = row["cve_id"]
+            if key not in seen:
+                seen.add(key)
+                unique_rows.append(row)
 
-        results = []
-        for row in rows:
+        matched = []
+        for row in unique_rows:
             if self._version_matches(version, row["version_start"], row["version_end"]):
-                results.append(CVE(
+                matched.append(CVE(
                     cve_id=row["cve_id"],
                     service_name=row["service_name"],
                     version_start=row["version_start"],
@@ -278,7 +426,9 @@ class VulnDB:
                     description=row["description"]
                 ))
 
-        return results
+        matched.sort(key=lambda x: x.cvss_score, reverse=True)
+        
+        return matched[:limit]
 
     def query_all(self, fingerprint_results: Dict[str, List[Dict]]) -> Dict[str, Dict]:
         all_results: Dict[str, Dict] = {}

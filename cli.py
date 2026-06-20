@@ -272,18 +272,25 @@ def initdb(db_path: str, csv_path: Optional[str]):
                 return
             os.remove(db_path)
         
-        vuln_db = VulnDB(db_path=db_path, csv_path=csv_path)
-        
-        if csv_path and os.path.exists(csv_path):
-            cursor = vuln_db.conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM cves")
-            count = cursor.fetchone()[0]
-            print_status(f"成功导入 {count} 条 CVE 记录", "success")
+        if csv_path:
+            if not os.path.exists(csv_path):
+                print_status(f"CSV 文件不存在: {csv_path}", "error")
+                sys.exit(1)
+            
+            vuln_db = VulnDB(db_path=db_path, load_sample=False)
+            try:
+                imported, skipped = vuln_db.import_csv(csv_path)
+                print_status(f"CSV 导入完成", "success")
+                print_status(f"  成功导入: {imported} 条", "success")
+                print_status(f"  跳过: {skipped} 条", "warning")
+            finally:
+                vuln_db.close()
         else:
+            vuln_db = VulnDB(db_path=db_path)
+            vuln_db.close()
             print_status("CVE 数据库初始化完成", "success")
             print_status("数据库包含常见服务的示例 CVE 数据", "info")
         
-        vuln_db.close()
     except Exception as e:
         print_status(f"数据库初始化失败: {e}", "error")
         sys.exit(1)

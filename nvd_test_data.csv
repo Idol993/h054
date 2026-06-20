@@ -1,0 +1,49 @@
+CVE ID,Description,CVSS Score,CVSS Severity,Product,Vendor,versionStartIncluding,versionEndIncluding,CPE
+CVE-2024-1001,Nginx HTTP request smuggling vulnerability,7.5,HIGH,nginx_web_server,nginx,1.0,1.25,cpe:/a:nginx:nginx:1.20
+CVE-2024-1002,Nginx buffer overflow vulnerability,9.8,CRITICAL,http_server,nginx,0.8,1.24,cpe:/a:nginx:nginx:1.18
+CVE-2024-1003,Nginx resolver vulnerability,8.1,HIGH,nginx,nginx,0.6,1.21,cpe:/a:nginx:nginx
+CVE-2024-1004,Nginx HTTP/2 vulnerability,7.5,HIGH,nginx,nginx,1.1,1.25,cpe:/a:nginx:nginx
+CVE-2024-1005,Nginx SSL vulnerability,7.0,HIGH,nginx,nginx,0.7,1.23,cpe:/a:nginx:nginx
+CVE-2024-1006,Nginx proxy vulnerability,6.5,MEDIUM,nginx,nginx,1.0,1.22,cpe:/a:nginx:nginx
+CVE-2024-1007,Nginx cache poisoning vulnerability,7.5,HIGH,nginx,nginx,0.8,1.20,cpe:/a:nginx:nginx
+CVE-2024-1008,Nginx module vulnerability,7.8,HIGH,nginx,nginx,1.2,1.25,cpe:/a:nginx:nginx
+CVE-2024-1009,Nginx security bypass vulnerability,6.0,MEDIUM,nginx,nginx,0.9,1.19,cpe:/a:nginx:nginx
+CVE-2024-1010,Nginx information disclosure,5.3,MEDIUM,nginx,nginx,1.0,1.24,cpe:/a:nginx:nginx
+CVE-2024-1011,Nginx denial of service,7.5,HIGH,nginx,nginx,0.6,1.25,cpe:/a:nginx:nginx
+CVE-2024-1012,Nginx auth vulnerability,8.2,HIGH,nginx,nginx,1.1,1.23,cpe:/a:nginx:nginx
+CVE-2024-1013,Nginx cookie vulnerability,6.8,MEDIUM,nginx,nginx,1.0,1.22,cpe:/a:nginx:nginx
+CVE-2024-1014,Nginx path traversal,7.2,HIGH,nginx,nginx,0.7,1.21,cpe:/a:nginx:nginx
+CVE-2024-1015,Nginx XSS vulnerability,6.1,MEDIUM,nginx,nginx,1.0,1.20,cpe:/a:nginx:nginx
+CVE-2024-1016,Nginx CSRF vulnerability,5.8,MEDIUM,nginx,nginx,1.1,1.19,cpe:/a:nginx:nginx
+CVE-2024-1017,Nginx SSRF vulnerability,7.4,HIGH,nginx,nginx,0.8,1.25,cpe:/a:nginx:nginx
+CVE-2024-1018,Nginx race condition,7.0,HIGH,nginx,nginx,1.0,1.24,cpe:/a:nginx:nginx
+CVE-2024-1019,Nginx memory leak,5.5,MEDIUM,nginx,nginx,0.9,1.23,cpe:/a:nginx:nginx
+CVE-2024-1020,Nginx integer overflow,8.5,HIGH,nginx,nginx,0.7,1.22,cpe:/a:nginx:nginx
+CVE-2024-1021,Nginx null pointer deref,5.9,MEDIUM,nginx,nginx,1.0,1.21,cpe:/a:nginx:nginx
+CVE-2024-1022,Nginx heap overflow,9.0,CRITICAL,nginx,nginx,0.6,1.20,cpe:/a:nginx:nginx
+CVE-2024-1023,Nginx stack overflow,8.8,HIGH,nginx,nginx,1.2,1.25,cpe:/a:nginx:nginx
+CVE-2024-1024,Nginx use after free,8.0,HIGH,nginx,nginx,0.8,1.18,cpe:/a:nginx:nginx
+CVE-2024-1025,Nginx format string,7.5,HIGH,nginx,nginx,1.0,1.17,cpe:/a:nginx:nginx
+CVE-2024-1026,Nginx code injection,9.8,CRITICAL,nginx,nginx,1.1,1.20,cpe:/a:nginx:nginx
+CVE-2024-1027,Nginx command injection,9.0,CRITICAL,nginx,nginx,0.7,1.19,cpe:/a:nginx:nginx
+CVE-2024-1028,Nginx backdoor,10.0,CRITICAL,nginx,nginx,1.0,1.16,cpe:/a:nginx:nginx
+CVE-2024-1029,Nginx weak crypto,5.3,MEDIUM,nginx,nginx,0.6,1.15,cpe:/a:nginx:nginx
+CVE-2024-1030,Nginx misconfiguration,4.0,MEDIUM,nginx,nginx,1.0,1.14,cpe:/a:nginx:nginx
+CVE-2024-2001,Apache HTTP Server path traversal,9.8,CRITICAL,http_server,apache,2.4.49,2.4.50,cpe:/a:apache:http_server:2.4.49
+CVE-2024-2002,Apache mod_proxy vulnerability,7.5,HIGH,apache_http_server,apache,2.4.0,2.4.52,cpe:/a:apache:http_server
+CVE-2024-2003,Apache request smuggling,7.5,HIGH,httpd,apache,2.2.0,2.4.55,cpe:/a:apache:http_server
+CVE-2024-2004,Apache RCE vulnerability,8.5,HIGH,apache2,apache,2.4.0,2.4.58,cpe:/a:apache:http_server
+CVE-2024-3001,Microsoft IIS remote code execution,9.8,CRITICAL,internet_information_services,microsoft,7.0,10.0,cpe:/a:microsoft:internet_information_services:10.0
+CVE-2024-3002,IIS directory traversal,7.5,HIGH,internet_information_server,microsoft,6.0,10.0,cpe:/a:microsoft:internet_information_services
+CVE-2024-3003,IIS buffer overflow,8.0,HIGH,iis,microsoft,7.5,10.0,cpe:/a:microsoft:internet_information_services
+CVE-2024-4001,OpenSSH signal handler RCE,10.0,CRITICAL,openssh,openbsd,8.5,9.8,cpe:/a:openbsd:openssh:9.0
+CVE-2024-4002,OpenSSH auth bypass,7.5,HIGH,open_ssh,openbsd,7.0,9.0,cpe:/a:openbsd:openssh
+CVE-2024-4003,OpenSSH information leak,5.9,MEDIUM,ssh,openbsd,6.0,8.0,cpe:/a:openbsd:openssh
+CVE-2024-5001,MySQL privilege escalation,7.2,HIGH,mysql,oracle,8.0,8.0.23,cpe:/a:oracle:mysql:8.0.20
+CVE-2024-5002,MySQL SQL injection,8.0,HIGH,mysql_server,oracle,5.7,8.0,cpe:/a:oracle:mysql
+CVE-2024-6001,Redis Lua escape,8.8,HIGH,redis,redis,2.6,7.0,cpe:/a:redis:redis:6.2
+CVE-2024-6002,Redis buffer overflow,7.5,HIGH,redis_server,redis,6.0,7.0,cpe:/a:redis:redis
+CVE-2024-7001,PostgreSQL buffer overflow,9.8,CRITICAL,postgresql,postgresql,11.0,15.0,cpe:/a:postgresql:postgresql:14.0
+CVE-2024-7002,PostgreSQL injection,8.0,HIGH,postgres,postgresql,10.0,14.0,cpe:/a:postgresql:postgresql
+INVALID_CVE,,0.0,,unknown,,0,9999,
+CVE-2024-9999,No version info,5.0,MEDIUM,test_vendor,test_product,,,cpe:/a:test:test_product
