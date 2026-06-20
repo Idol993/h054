@@ -1,0 +1,6 @@
+CVE ID,Description,CVSS Score,CVSS Severity,Product,Vendor,Version Start,Version End
+CVE-2024-1234,OpenSSH critical vulnerability allowing remote code execution,9.8,CRITICAL,openssh,openbsd,7.0,9.0
+CVE-2024-5678,nginx HTTP request smuggling vulnerability,7.5,HIGH,nginx,nginx,1.0,1.25
+CVE-2024-9012,Apache path traversal vulnerability,8.1,HIGH,apache,apache,2.4.0,2.4.58
+CVE-2024-3456,MySQL privilege escalation vulnerability,7.2,HIGH,mysql,oracle,8.0,8.0.35
+CVE-2024-7890,Redis Lua sandbox escape,8.8,HIGH,redis,redis,6.0,7.2

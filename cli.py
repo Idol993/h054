@@ -8,7 +8,7 @@
 import sys
 import os
 from datetime import datetime
-from typing import List, Dict, Set
+from typing import List, Dict, Set, Optional
 
 import click
 
@@ -257,10 +257,13 @@ def scan(target: str, top_ports: int, rate: int, output: str, timeout: int, max_
 
 @cli.command()
 @click.option('--db-path', default='cve.db', help='CVE 数据库路径')
-def initdb(db_path: str):
+@click.option('--csv', 'csv_path', default=None, help='NVD CSV 文件路径，用于导入 CVE 数据')
+def initdb(db_path: str, csv_path: Optional[str]):
     """初始化 CVE 数据库"""
     print_banner()
     print_status(f"初始化 CVE 数据库: {db_path}", "info")
+    if csv_path:
+        print_status(f"将从 CSV 文件导入: {csv_path}", "info")
     
     try:
         if os.path.exists(db_path):
@@ -269,10 +272,18 @@ def initdb(db_path: str):
                 return
             os.remove(db_path)
         
-        vuln_db = VulnDB(db_path=db_path)
+        vuln_db = VulnDB(db_path=db_path, csv_path=csv_path)
+        
+        if csv_path and os.path.exists(csv_path):
+            cursor = vuln_db.conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM cves")
+            count = cursor.fetchone()[0]
+            print_status(f"成功导入 {count} 条 CVE 记录", "success")
+        else:
+            print_status("CVE 数据库初始化完成", "success")
+            print_status("数据库包含常见服务的示例 CVE 数据", "info")
+        
         vuln_db.close()
-        print_status("CVE 数据库初始化完成", "success")
-        print_status("数据库包含常见服务的示例 CVE 数据", "info")
     except Exception as e:
         print_status(f"数据库初始化失败: {e}", "error")
         sys.exit(1)

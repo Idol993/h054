@@ -10,14 +10,34 @@ except ImportError:
     HAS_REQUESTS = False
 
 
+SERVER_HEADER_PATTERNS = [
+    (r"nginx/([\d.]+)", "nginx"),
+    (r"Apache/([\d.]+)", "apache"),
+    (r"Microsoft-IIS/([\d.]+)", "microsoft_iis"),
+    (r"nginx", "nginx", ""),
+    (r"Apache", "apache", ""),
+    (r"Microsoft-IIS", "microsoft_iis", ""),
+    (r"lighttpd/([\d.]+)", "lighttpd"),
+    (r"LiteSpeed", "litespeed"),
+    (r"OpenResty/([\d.]+)", "openresty"),
+    (r"Tomcat/([\d.]+)", "apache_tomcat"),
+    (r"Jetty/([\d.]+)", "jetty"),
+    (r"Node\.js", "nodejs"),
+    (r"Express", "express"),
+    (r"werkzeug/([\d.]+)", "werkzeug"),
+]
+
+
 SERVICE_PROBES = [
     {
         "name": "ssh",
         "ports": [22],
         "probes": [
-            {"payload": b"\n", "match": r"SSH-(\d+\.\d+)-(.+)"},
+            {"payload": b"\n", "match": r"SSH-\d+\.\d+-([A-Za-z0-9]+)[_-]([\d.]+)"},
+            {"payload": b"", "match": r"SSH-\d+\.\d+-([A-Za-z0-9]+)[_-]([\d.]+)"},
         ],
-        "service": "ssh"
+        "service": "ssh",
+        "extract_product": True
     },
     {
         "name": "ftp",
@@ -133,6 +153,22 @@ class ServiceFingerprinter:
         except Exception:
             return ""
 
+    def _parse_server_header(self, server: str) -> Tuple[str, str]:
+        if not server:
+            return "http", ""
+        server_lower = server.lower()
+        for pattern in SERVER_HEADER_PATTERNS:
+            if len(pattern) == 3:
+                regex, service_name, default_version = pattern
+            else:
+                regex, service_name = pattern
+                default_version = ""
+            match = re.search(regex, server, re.IGNORECASE)
+            if match:
+                version = match.group(1) if match.groups() else default_version
+                return service_name, version
+        return "http", server
+
     def _probe_http(self, ip: str, port: int) -> Tuple[str, str]:
         if not HAS_REQUESTS:
             return "http", ""
@@ -143,7 +179,7 @@ class ServiceFingerprinter:
                     response = requests.get(url, timeout=self.timeout, verify=False, allow_redirects=True)
                     server = response.headers.get("Server", "")
                     if server:
-                        return "http", server
+                        return self._parse_server_header(server)
                     if response.status_code:
                         return "http", f"HTTP {response.status_code}"
                 except Exception:
@@ -161,11 +197,17 @@ class ServiceFingerprinter:
                     if banner:
                         match = re.search(probe["match"], banner, re.IGNORECASE)
                         if match:
-                            version = ""
-                            for g in match.groups():
-                                if g:
-                                    version = g
-                                    break
+                            if probe_def.get("extract_product", False):
+                                product_name = match.group(1).lower() if match.group(1) else ""
+                                version = match.group(2) if len(match.groups()) > 1 and match.group(2) else ""
+                                if product_name:
+                                    return product_name, version
+                            else:
+                                version = ""
+                                for g in match.groups():
+                                    if g:
+                                        version = g
+                                        break
                             return probe_def["service"], version
                 return probe_def["service"], ""
 

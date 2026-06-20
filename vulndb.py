@@ -1,6 +1,7 @@
 import sqlite3
 import os
 import re
+import csv
 from typing import List, Dict, Tuple, Optional
 from dataclasses import dataclass
 
@@ -62,19 +63,19 @@ SAMPLE_CVE_DATA = [
 
 
 class VulnDB:
-    def __init__(self, db_path: str = "cve.db"):
+    def __init__(self, db_path: str = "cve.db", csv_path: Optional[str] = None):
         self.db_path = db_path
         self.conn = None
-        self._init_db()
+        self._init_db(csv_path)
 
-    def _init_db(self) -> None:
+    def _init_db(self, csv_path: Optional[str] = None) -> None:
         if not os.path.exists(self.db_path):
-            self._create_db()
+            self._create_db(csv_path)
         else:
             self.conn = sqlite3.connect(self.db_path)
             self.conn.row_factory = sqlite3.Row
 
-    def _create_db(self) -> None:
+    def _create_db(self, csv_path: Optional[str] = None) -> None:
         self.conn = sqlite3.connect(self.db_path)
         self.conn.row_factory = sqlite3.Row
         cursor = self.conn.cursor()
@@ -100,12 +101,111 @@ class VulnDB:
             CREATE INDEX IF NOT EXISTS idx_cvss ON cves(cvss_score)
         """)
 
-        cursor.executemany("""
-            INSERT INTO cves (cve_id, service_name, version_start, version_end, cvss_score, cvss_severity, description)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, SAMPLE_CVE_DATA)
+        if csv_path and os.path.exists(csv_path):
+            self._import_from_csv(cursor, csv_path)
+        else:
+            cursor.executemany("""
+                INSERT INTO cves (cve_id, service_name, version_start, version_end, cvss_score, cvss_severity, description)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, SAMPLE_CVE_DATA)
 
         self.conn.commit()
+
+    def _get_severity_from_score(self, score: float) -> str:
+        if score >= 9.0:
+            return "CRITICAL"
+        elif score >= 7.0:
+            return "HIGH"
+        elif score >= 4.0:
+            return "MEDIUM"
+        elif score > 0:
+            return "LOW"
+        return "INFO"
+
+    def _parse_nvd_csv_row(self, row: Dict[str, str]) -> Optional[Tuple[str, str, str, str, float, str, str]]:
+        try:
+            cve_id = row.get("CVE ID", row.get("CVE", row.get("cve_id", ""))).strip()
+            description = row.get("Description", row.get("description", "")).strip()
+            
+            cvss_str = row.get("CVSS Score", row.get("CVSS", row.get("cvss_score", "0")))
+            try:
+                cvss_score = float(cvss_str) if cvss_str else 0.0
+            except (ValueError, TypeError):
+                cvss_score = 0.0
+            
+            cvss_severity = row.get("CVSS Severity", row.get("Severity", row.get("cvss_severity", ""))).strip().upper()
+            if not cvss_severity:
+                cvss_severity = self._get_severity_from_score(cvss_score)
+            
+            product = row.get("Product", row.get("Software", row.get("service_name", ""))).strip().lower()
+            vendor = row.get("Vendor", row.get("vendor", "")).strip().lower()
+            
+            if not product:
+                cpe = row.get("CPE", row.get("cpe", ""))
+                if cpe:
+                    parts = cpe.split(":")
+                    if len(parts) >= 5:
+                        product = parts[4].lower()
+            
+            if not product or not cve_id:
+                return None
+            
+            version_start = row.get("Version Start", row.get("version_start", row.get("Affected Version", "0"))).strip()
+            version_end = row.get("Version End", row.get("version_end", row.get("Affected Version End", "9999"))).strip()
+            
+            if not version_start or version_start in ["*", "-", "n/a"]:
+                version_start = "0"
+            if not version_end or version_end in ["*", "-", "n/a"]:
+                version_end = "9999"
+            
+            return (cve_id, product, version_start, version_end, cvss_score, cvss_severity, description)
+        except Exception:
+            return None
+
+    def _import_from_csv(self, cursor: sqlite3.Cursor, csv_path: str) -> int:
+        if not os.path.exists(csv_path):
+            raise FileNotFoundError(f"CSV 文件不存在: {csv_path}")
+
+        count = 0
+        batch_size = 1000
+        batch_data = []
+
+        try:
+            with open(csv_path, "r", encoding="utf-8", errors="replace") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    parsed = self._parse_nvd_csv_row(row)
+                    if parsed:
+                        batch_data.append(parsed)
+                        count += 1
+                        
+                        if len(batch_data) >= batch_size:
+                            cursor.executemany("""
+                                INSERT INTO cves (cve_id, service_name, version_start, version_end, cvss_score, cvss_severity, description)
+                                VALUES (?, ?, ?, ?, ?, ?, ?)
+                            """, batch_data)
+                            batch_data = []
+
+                if batch_data:
+                    cursor.executemany("""
+                        INSERT INTO cves (cve_id, service_name, version_start, version_end, cvss_score, cvss_severity, description)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """, batch_data)
+
+        except Exception as e:
+            raise RuntimeError(f"导入 CSV 失败: {e}")
+
+        return count
+
+    def import_csv(self, csv_path: str) -> int:
+        if not self.conn:
+            self.conn = sqlite3.connect(self.db_path)
+            self.conn.row_factory = sqlite3.Row
+        
+        cursor = self.conn.cursor()
+        count = self._import_from_csv(cursor, csv_path)
+        self.conn.commit()
+        return count
 
     def _parse_version(self, version: str) -> List[int]:
         if not version:
