@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>内网安全评估报告 - {{ target }}</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            color: #e0e0e0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 30px;
+            border-radius: 15px;
+            margin-bottom: 25px;
+            box-shadow: 0 10px 40px rgba(102, 126, 234, 0.3);
+        }
+        .header h1 {
+            color: white;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        .header p {
+            color: rgba(255,255,255,0.9);
+            font-size: 1.1em;
+        }
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 25px;
+        }
+        .info-card {
+            background: rgba(255,255,255,0.05);
+            backdrop-filter: blur(10px);
+            padding: 25px;
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.1);
+            transition: transform 0.3s ease;
+        }
+        .info-card:hover {
+            transform: translateY(-5px);
+            border-color: rgba(102, 126, 234, 0.5);
+        }
+        .info-card h3 {
+            color: #667eea;
+            font-size: 0.9em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 10px;
+        }
+        .info-card .value {
+            font-size: 2em;
+            font-weight: bold;
+            color: white;
+        }
+        .info-card .sub {
+            font-size: 0.85em;
+            color: #888;
+            margin-top: 5px;
+        }
+        .risk-summary {
+            background: rgba(255,255,255,0.05);
+            backdrop-filter: blur(10px);
+            padding: 25px;
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.1);
+            margin-bottom: 25px;
+        }
+        .risk-summary h2 {
+            color: #fff;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+        }
+        .risk-bars {
+            display: flex;
+            gap: 10px;
+            align-items: flex-end;
+            height: 150px;
+            margin-bottom: 20px;
+        }
+        .risk-bar-item {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+        }
+        .risk-bar {
+            width: 100%;
+            max-width: 60px;
+            border-radius: 8px 8px 0 0;
+            transition: all 0.5s ease;
+            position: relative;
+            min-height: 10px;
+        }
+        .risk-bar:hover {
+            filter: brightness(1.2);
+        }
+        .risk-bar::after {
+            content: attr(data-count);
+            position: absolute;
+            top: -25px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-weight: bold;
+            font-size: 1.2em;
+            color: white;
+        }
+        .risk-label {
+            font-size: 0.85em;
+            font-weight: bold;
+        }
+        .CRITICAL { background: linear-gradient(to top, #ff0844 0%, #ffb199 100%); }
+        .HIGH { background: linear-gradient(to top, #ff6b6b 0%, #ffa8a8 100%); }
+        .MEDIUM { background: linear-gradient(to top, #feca57 0%, #ffeaa7 100%); }
+        .LOW { background: linear-gradient(to top, #1dd1a1 0%, #55efc4 100%); }
+        .INFO { background: linear-gradient(to top, #54a0ff 0%, #74b9ff 100%); }
+        .label-CRITICAL { color: #ff6b6b; }
+        .label-HIGH { color: #ff8a8a; }
+        .label-MEDIUM { color: #feca57; }
+        .label-LOW { color: #1dd1a1; }
+        .label-INFO { color: #54a0ff; }
+        .hosts-section {
+            background: rgba(255,255,255,0.05);
+            backdrop-filter: blur(10px);
+            padding: 25px;
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.1);
+            margin-bottom: 25px;
+        }
+        .hosts-section h2 {
+            color: #fff;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+        }
+        .host-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .host-tag {
+            background: rgba(102, 126, 234, 0.2);
+            color: #667eea;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: 500;
+            border: 1px solid rgba(102, 126, 234, 0.3);
+            transition: all 0.3s ease;
+        }
+        .host-tag:hover {
+            background: rgba(102, 126, 234, 0.4);
+            transform: scale(1.05);
+        }
+        .vulnerabilities-section {
+            background: rgba(255,255,255,0.05);
+            backdrop-filter: blur(10px);
+            padding: 25px;
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .vulnerabilities-section h2 {
+            color: #fff;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+        }
+        .vuln-item {
+            margin-bottom: 15px;
+            border-radius: 10px;
+            overflow: hidden;
+            border: 1px solid rgba(255,255,255,0.1);
+            transition: all 0.3s ease;
+        }
+        .vuln-item:hover {
+            border-color: rgba(102, 126, 234, 0.5);
+        }
+        .vuln-header {
+            padding: 20px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(255,255,255,0.03);
+            transition: background 0.3s ease;
+        }
+        .vuln-header:hover {
+            background: rgba(255,255,255,0.06);
+        }
+        .vuln-header-left {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+        .severity-badge {
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 0.85em;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .badge-CRITICAL { background: linear-gradient(135deg, #ff0844 0%, #ffb199 100%); color: white; }
+        .badge-HIGH { background: linear-gradient(135deg, #ff6b6b 0%, #ffa8a8 100%); color: white; }
+        .badge-MEDIUM { background: linear-gradient(135deg, #feca57 0%, #ffeaa7 100%); color: #333; }
+        .badge-LOW { background: linear-gradient(135deg, #1dd1a1 0%, #55efc4 100%); color: white; }
+        .badge-INFO { background: linear-gradient(135deg, #54a0ff 0%, #74b9ff 100%); color: white; }
+        .ip-port {
+            font-family: 'Courier New', monospace;
+            font-size: 1.1em;
+            color: #fff;
+        }
+        .service-name {
+            color: #667eea;
+            font-weight: 600;
+        }
+        .service-version {
+            color: #aaa;
+        }
+        .cve-count {
+            background: rgba(255,255,255,0.1);
+            padding: 5px 12px;
+            border-radius: 15px;
+            font-size: 0.9em;
+            color: #fff;
+        }
+        .vuln-header-right {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        .toggle-icon {
+            font-size: 1.5em;
+            color: #667eea;
+            transition: transform 0.3s ease;
+        }
+        .vuln-item.active .toggle-icon {
+            transform: rotate(180deg);
+        }
+        .vuln-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.5s ease, padding 0.3s ease;
+            background: rgba(0,0,0,0.2);
+        }
+        .vuln-item.active .vuln-content {
+            max-height: 2000px;
+            padding: 20px;
+        }
+        .cve-list {
+            list-style: none;
+        }
+        .cve-item {
+            padding: 15px;
+            margin-bottom: 10px;
+            background: rgba(255,255,255,0.03);
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+            transition: all 0.3s ease;
+        }
+        .cve-item:hover {
+            background: rgba(255,255,255,0.06);
+            transform: translateX(5px);
+        }
+        .cve-item.critical { border-left-color: #ff6b6b; }
+        .cve-item.high { border-left-color: #ff8a8a; }
+        .cve-item.medium { border-left-color: #feca57; }
+        .cve-item.low { border-left-color: #1dd1a1; }
+        .cve-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .cve-id {
+            font-weight: bold;
+            color: #667eea;
+            font-size: 1.1em;
+        }
+        .cve-score {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .score-value {
+            font-weight: bold;
+            font-size: 1.2em;
+            color: #fff;
+        }
+        .cve-description {
+            color: #bbb;
+            line-height: 1.6;
+            margin-bottom: 8px;
+        }
+        .cve-meta {
+            display: flex;
+            gap: 20px;
+            font-size: 0.85em;
+            color: #888;
+            flex-wrap: wrap;
+        }
+        .no-vulns {
+            text-align: center;
+            padding: 40px;
+            color: #888;
+            font-style: italic;
+        }
+        .footer {
+            text-align: center;
+            padding: 30px;
+            color: #666;
+            font-size: 0.9em;
+        }
+        @media (max-width: 768px) {
+            .header h1 { font-size: 1.8em; }
+            .info-card .value { font-size: 1.5em; }
+            .vuln-header { flex-direction: column; align-items: flex-start; gap: 10px; }
+            .vuln-header-right { width: 100%; justify-content: space-between; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔒 内网安全评估报告</h1>
+            <p>扫描时间: {{ scan_time }} | 目标: {{ target }}</p>
+        </div>
+
+        <div class="info-grid">
+            <div class="info-card">
+                <h3>存活主机</h3>
+                <div class="value">{{ alive_count }}</div>
+                <div class="sub">在线设备数量</div>
+            </div>
+            <div class="info-card">
+                <h3>开放服务</h3>
+                <div class="value">{{ services|length }}</div>
+                <div class="sub">发现的服务总数</div>
+            </div>
+            <div class="info-card">
+                <h3>严重漏洞</h3>
+                <div class="value label-CRITICAL">{{ risk_summary.get('CRITICAL', 0) }}</div>
+                <div class="sub">CRITICAL 级别</div>
+            </div>
+            <div class="info-card">
+                <h3>高危漏洞</h3>
+                <div class="value label-HIGH">{{ risk_summary.get('HIGH', 0) }}</div>
+                <div class="sub">HIGH 级别</div>
+            </div>
+        </div>
+
+        <div class="risk-summary">
+            <h2>📊 风险等级分布</h2>
+            <div class="risk-bars">
+                {% for severity in SEVERITY_ORDER %}
+                    {% set count = risk_summary.get(severity, 0) %}
+                    {% set height = (count / (services|length if services|length > 0 else 1)) * 100 %}
+                    {% set height = height if height > 5 else 5 %}
+                    <div class="risk-bar-item">
+                        <div class="risk-bar {{ severity }}" 
+                             data-count="{{ count }}"
+                             style="height: {{ height }}%"></div>
+                        <div class="risk-label label-{{ severity }}">{{ severity }}</div>
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="hosts-section">
+            <h2>🌐 存活主机列表</h2>
+            <div class="host-list">
+                {% for host in alive_hosts %}
+                    <span class="host-tag">{{ host }}</span>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="vulnerabilities-section">
+            <h2>⚠️ 漏洞详情</h2>
+            {% if services %}
+                {% for svc in services %}
+                    <div class="vuln-item" onclick="toggleVuln(this)">
+                        <div class="vuln-header">
+                            <div class="vuln-header-left">
+                                <span class="severity-badge badge-{{ svc.severity }}">{{ svc.severity }}</span>
+                                <span class="ip-port">{{ svc.ip }}:{{ svc.port }}</span>
+                                <span class="service-name">{{ svc.service }}</span>
+                                {% if svc.version %}
+                                    <span class="service-version">{{ svc.version }}</span>
+                                {% endif %}
+                            </div>
+                            <div class="vuln-header-right">
+                                <span class="cve-count">{{ svc.cve_count }} CVE{% if svc.cve_count != 1 %}s{% endif %}</span>
+                                <span class="toggle-icon">▼</span>
+                            </div>
+                        </div>
+                        <div class="vuln-content">
+                            {% if svc.cves %}
+                                <ul class="cve-list">
+                                    {% for cve in svc.cves %}
+                                        <li class="cve-item {{ cve.cvss_severity.lower() }}">
+                                            <div class="cve-header">
+                                                <span class="cve-id">{{ cve.cve_id }}</span>
+                                                <div class="cve-score">
+                                                    <span class="score-value label-{{ cve.cvss_severity }}">{{ cve.cvss_score }}</span>
+                                                    <span class="severity-badge badge-{{ cve.cvss_severity }}" style="padding: 3px 10px; font-size: 0.75em;">{{ cve.cvss_severity }}</span>
+                                                </div>
+                                            </div>
+                                            <p class="cve-description">{{ cve.description }}</p>
+                                            <div class="cve-meta">
+                                                <span>影响版本: {{ cve.version_start }} - {{ cve.version_end }}</span>
+                                                <span>服务: {{ cve.service_name }}</span>
+                                            </div>
+                                        </li>
+                                    {% endfor %}
+                                </ul>
+                            {% else %}
+                                <div class="no-vulns">暂无已知 CVE 漏洞</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                {% endfor %}
+            {% else %}
+                <div class="no-vulns">未发现开放服务或漏洞</div>
+            {% endif %}
+        </div>
+
+        <div class="footer">
+            <p>本报告由内网安全评估工具自动生成 | 扫描时间: {{ scan_time }}</p>
+            <p style="margin-top: 10px;">⚠️ 仅供安全评估使用，请妥善保管</p>
+        </div>
+    </div>
+
+    <script>
+        function toggleVuln(element) {
+            element.classList.toggle('active');
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const criticalItems = document.querySelectorAll('.badge-CRITICAL');
+            criticalItems.forEach(item => {
+                item.style.animation = 'pulse 2s infinite';
+            });
+        });
+
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes pulse {
+                0%, 100% { opacity: 1; }
+                50% { opacity: 0.7; }
+            }
+        `;
+        document.head.appendChild(style);
+    </script>
+</body>
+</html>
