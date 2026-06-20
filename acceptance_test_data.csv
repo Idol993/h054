@@ -1,0 +1,13 @@
+CVE_ID,Service_Name,Version_Start,Version_End,CVSS_Score,CVSS_Severity,Description,versionStartIncluding,versionStartExcluding,versionEndIncluding,versionEndExcluding
+CVE-TEST-001,nginx,1.20,1.21,7.5,HIGH,Test nginx CVE with including boundaries,1.20,,1.21,
+CVE-TEST-002,nginx,1.20,1.21,8.0,HIGH,"Test nginx CVE with excluding start and including end (1.20, 1.21]",,1.20,1.21,
+CVE-TEST-003,nginx,1.20,1.21,9.8,CRITICAL,"Test nginx CVE with both excluding (1.20, 1.21)",,1.20,,1.21
+CVE-TEST-004,nginx,1.20,1.21,5.5,MEDIUM,"Test nginx CVE with including start and excluding end [1.20, 1.21)",1.20,,,1.21
+CVE-TEST-005,apache,2.4,2.5,7.5,high,Test case-insensitive severity (lowercase high),2.4,,2.5,
+CVE-TEST-006,apache,2.2,2.4,5.0,medium,Test apache CVE,2.2,,2.4,
+CVE-TEST-007,openssh,7.0,8.0,0.0,NONE,Test NONE severity,7.0,,8.0,
+CVE-TEST-008,openssh,5.0,7.0,0.0,UNKNOWN,Test UNKNOWN severity,5.0,,7.0,
+CVE-TEST-009,http_server,2.4,2.5,7.0,HIGH,Test alias mapping (http_server -> apache),2.4,,2.5,
+CVE-TEST-010,mysql,5.0,8.0,4.0,low,Test low severity,5.0,,8.0,
+CVE-TEST-011,nginx,1.10,1.20,6.5,MEDIUM,Test nginx older version range,1.10,,1.20,
+CVE-TEST-012,nginx,1.0,2.0,3.0,LOW,Test nginx wider range,1.0,,2.0,

@@ -26,7 +26,7 @@ from utils.rate_limiter import RateLimiter
 from discovery import HostDiscovery
 from scanner import PortScanner, get_top_ports
 from fingerprinter import ServiceFingerprinter
-from vulndb import VulnDB
+from vulndb import VulnDB, severity_rank, normalize_severity
 from reporter import Reporter, ScanResult
 
 
@@ -244,16 +244,14 @@ def scan(target: str, top_ports: int, rate: int, output: str, timeout: int, max_
     if min_severity or cve_only:
         from copy import deepcopy
         terminal_vulns = deepcopy(vulnerabilities)
-        SEVERITY_ORDER = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"]
         if min_severity:
-            min_idx = SEVERITY_ORDER.index(min_severity.upper())
+            min_rank = severity_rank(min_severity)
             for ip in list(terminal_vulns.keys()):
                 for svc_key in list(terminal_vulns[ip].keys()):
                     svc_data = terminal_vulns[ip][svc_key]
                     filtered_cves = []
                     for cve in svc_data.get("cves", []):
-                        cve_idx = SEVERITY_ORDER.index(cve.cvss_severity)
-                        if cve_idx <= min_idx:
+                        if severity_rank(cve.cvss_severity) <= min_rank:
                             filtered_cves.append(cve)
                     svc_data["cves"] = filtered_cves
         
@@ -372,18 +370,19 @@ def query(service: str, version: str, db_path: str, limit: int, min_severity: Op
         
         severity_groups = {}
         for cve in cves:
-            sev = cve.cvss_severity
+            sev = normalize_severity(cve.cvss_severity)
             if sev not in severity_groups:
                 severity_groups[sev] = []
             severity_groups[sev].append(cve)
         
-        SEVERITY_ORDER = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"]
-        for sev in SEVERITY_ORDER:
+        from vulndb import SEVERITY_ORDER as VULN_SEVERITY_ORDER
+        color_map = {"CRITICAL": "bold red", "HIGH": "red", "MEDIUM": "yellow", 
+                     "LOW": "green", "INFO": "blue", "NONE": "dim", "UNKNOWN": "white"}
+        for sev in VULN_SEVERITY_ORDER:
             if sev not in severity_groups:
                 continue
             sev_cves = severity_groups[sev]
             if RICH_AVAILABLE:
-                color_map = {"CRITICAL": "bold red", "HIGH": "red", "MEDIUM": "yellow", "LOW": "green", "INFO": "blue"}
                 console.print(f"\n  [{color_map.get(sev, 'white')}]▌ {sev} - {len(sev_cves)} 个 CVE[/{color_map.get(sev, 'white')}]")
             else:
                 print(f"\n  ▌ {sev} - {len(sev_cves)} 个 CVE")
@@ -458,14 +457,15 @@ def checkdb(db_path: str, top: int):
             sev_table.add_column("占比", justify="right")
             
             total = stats['total_cves']
-            SEVERITY_ORDER = ["CRITICAL", "HIGH", "MEDIUM", "LOW"]
-            color_map = {"CRITICAL": "bold red", "HIGH": "red", "MEDIUM": "yellow", "LOW": "green"}
+            from vulndb import SEVERITY_ORDER as VULN_SEVERITY_ORDER
+            color_map = {"CRITICAL": "bold red", "HIGH": "red", "MEDIUM": "yellow", 
+                         "LOW": "green", "INFO": "blue", "NONE": "dim", "UNKNOWN": "white"}
             
-            for sev in SEVERITY_ORDER:
+            for sev in VULN_SEVERITY_ORDER:
                 count = stats['severity_distribution'].get(sev, 0)
                 percent = (count / total * 100) if total > 0 else 0
                 sev_table.add_row(
-                    f"[{color_map[sev]}]{sev}[/{color_map[sev]}]",
+                    f"[{color_map.get(sev, 'white')}]{sev}[/{color_map.get(sev, 'white')}]",
                     str(count),
                     f"{percent:.1f}%"
                 )
@@ -549,8 +549,8 @@ def checkdb(db_path: str, top: int):
             
             print("\n严重等级分布:")
             total = stats['total_cves']
-            SEVERITY_ORDER = ["CRITICAL", "HIGH", "MEDIUM", "LOW"]
-            for sev in SEVERITY_ORDER:
+            from vulndb import SEVERITY_ORDER as VULN_SEVERITY_ORDER
+            for sev in VULN_SEVERITY_ORDER:
                 count = stats['severity_distribution'].get(sev, 0)
                 percent = (count / total * 100) if total > 0 else 0
                 print(f"  {sev}: {count} ({percent:.1f}%)")

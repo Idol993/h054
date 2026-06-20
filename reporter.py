@@ -2,7 +2,7 @@ import os
 from typing import Dict, List, Set, Tuple
 from datetime import datetime
 from dataclasses import dataclass
-from vulndb import CVE
+from vulndb import CVE, normalize_severity
 
 try:
     from rich.console import Console
@@ -27,10 +27,11 @@ SEVERITY_COLORS = {
     "MEDIUM": "yellow",
     "LOW": "green",
     "INFO": "blue",
+    "NONE": "dim white",
     "UNKNOWN": "white"
 }
 
-SEVERITY_ORDER = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO", "UNKNOWN"]
+SEVERITY_ORDER = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO", "NONE", "UNKNOWN"]
 
 
 @dataclass
@@ -98,7 +99,7 @@ class Reporter:
     def _group_cves_by_severity(self, cves: List[CVE]) -> Dict[str, List[CVE]]:
         grouped = {s: [] for s in SEVERITY_ORDER}
         for cve in cves:
-            sev = cve.cvss_severity if cve.cvss_severity in SEVERITY_ORDER else "UNKNOWN"
+            sev = normalize_severity(cve.cvss_severity)
             grouped[sev].append(cve)
         return {k: v for k, v in grouped.items() if v}
 
